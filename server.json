@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.port/Port",
+  "description": "Port.io mcp server",
+  "repository": {
+    "url": "https://github.com/port-labs/remote-mcp-server",
+    "source": "github"
+  },
+  "version": "1.0.2",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.port.io/v1",
+      "description": "Port MCP server for EU region",
+      "headers": []
+    },
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.us.port.io/v1",
+      "description": "Port MCP server for US region",
+      "headers": []
+    }
+  ]
+}
