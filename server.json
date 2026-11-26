@@ -1,23 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.port/Port",
+  "title": "Port (EU)",
   "description": "Port AI software factory: give any agent your org's context and let it act safely",
   "repository": {
     "url": "https://github.com/port-labs/remote-mcp-server",
     "source": "github"
   },
-  "version": "1.0.3",
+  "version": "1.0.4",
   "remotes": [
     {
       "type": "streamable-http",
       "url": "https://mcp.port.io/v1",
-      "description": "Port MCP server for EU region",
-      "headers": []
-    },
-    {
-      "type": "streamable-http",
-      "url": "https://mcp.us.port.io/v1",
-      "description": "Port MCP server for US region",
       "headers": []
     }
   ]
