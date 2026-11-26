@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.port/Port-US",
+  "title": "Port (US)",
+  "description": "Port MCP for US orgs (app.us.port.io). Use with GitHub Copilot and other MCP clients.",
+  "repository": {
+    "url": "https://github.com/port-labs/remote-mcp-server",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.us.port.io/v1",
+      "headers": []
+    }
+  ]
+}

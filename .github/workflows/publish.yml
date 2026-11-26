@@ -5,6 +5,7 @@ on:
         branches: [main]
         paths:
             - "server.json"
+            - "server-us.json"
     workflow_dispatch:
 
 jobs:
@@ -14,53 +15,50 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: Get version from server.json
-              id: version
-              run: |
-                  VERSION=$(jq -r '.version' server.json)
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-                  echo "📦 Local version: $VERSION"
-
-            - name: Check if version already published
+            - name: Check which manifests need publishing
               id: check
               run: |
-                  VERSION="${{ steps.version.outputs.version }}"
-                  echo "Checking if version $VERSION is already published..."
+                  NEEDS_PUBLISH=false
+                  : > publish-manifests.txt
 
-                  # Query the registry API for existing versions
-                  RESPONSE=$(curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=io.port/Port" 2>/dev/null) || {
-                      echo "::warning::Failed to fetch registry data. Proceeding with publish."
+                  for manifest in server.json server-us.json; do
+                      [ -f "$manifest" ] || continue
+
+                      NAME=$(jq -r '.name' "$manifest")
+                      VERSION=$(jq -r '.version' "$manifest")
+                      echo "Checking $manifest ($NAME @ $VERSION)..."
+
+                      RESPONSE=$(curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=${NAME}" 2>/dev/null) || {
+                          echo "::warning::Failed to fetch registry data for $NAME. Will publish."
+                          echo "$manifest" >> publish-manifests.txt
+                          NEEDS_PUBLISH=true
+                          continue
+                      }
+
+                      if ! echo "$RESPONSE" | jq -e '.servers' > /dev/null 2>&1; then
+                          echo "::warning::Invalid registry response for $NAME. Will publish."
+                          echo "$manifest" >> publish-manifests.txt
+                          NEEDS_PUBLISH=true
+                          continue
+                      fi
+
+                      VERSION_EXISTS=$(echo "$RESPONSE" | jq -r --arg n "$NAME" --arg v "$VERSION" '
+                          [.servers[] | select(.server.name == $n) | .server.version] | any(. == $v)
+                      ' 2>/dev/null)
+
+                      if [ "$VERSION_EXISTS" = "true" ]; then
+                          echo "::notice::$NAME version $VERSION already published. Skipping $manifest."
+                      else
+                          echo "✅ Will publish $manifest ($NAME @ $VERSION)"
+                          echo "$manifest" >> publish-manifests.txt
+                          NEEDS_PUBLISH=true
+                      fi
+                  done
+
+                  if [ "$NEEDS_PUBLISH" = "true" ]; then
                       echo "should_publish=true" >> $GITHUB_OUTPUT
-                      exit 0
-                  }
-
-                  # Validate response is valid JSON with servers array
-                  if ! echo "$RESPONSE" | jq -e '.servers' > /dev/null 2>&1; then
-                      echo "::warning::Invalid registry response. Proceeding with publish."
-                      echo "should_publish=true" >> $GITHUB_OUTPUT
-                      exit 0
-                  fi
-
-                  # Get the latest published version (the one with isLatest: true)
-                  PUBLISHED_VERSION=$(echo "$RESPONSE" | jq -r '
-                      .servers[] |
-                      select(._meta."io.modelcontextprotocol.registry/official".isLatest == true) |
-                      .server.version // empty
-                  ' 2>/dev/null | head -1)
-
-                  # Fallback: check if this exact version exists anywhere in the results
-                  VERSION_EXISTS=$(echo "$RESPONSE" | jq -r --arg v "$VERSION" '
-                      [.servers[].server.version] | any(. == $v)
-                  ' 2>/dev/null)
-
-                  echo "📡 Latest published version: ${PUBLISHED_VERSION:-none}"
-
-                  if [ "$VERSION_EXISTS" = "true" ]; then
-                      echo "should_publish=false" >> $GITHUB_OUTPUT
-                      echo "::notice::Version $VERSION already exists in the registry. Skipping publish."
                   else
-                      echo "should_publish=true" >> $GITHUB_OUTPUT
-                      echo "✅ Version $VERSION is new, will publish."
+                      echo "should_publish=false" >> $GITHUB_OUTPUT
                   fi
 
             - name: Install MCP Publisher
@@ -74,21 +72,29 @@ jobs:
 
             - name: Publish to Registry
               if: steps.check.outputs.should_publish == 'true'
-              run: ./mcp-publisher publish
+              run: |
+                  while IFS= read -r manifest; do
+                      [ -f "$manifest" ] || continue
+                      NAME=$(jq -r '.name' "$manifest")
+                      VERSION=$(jq -r '.version' "$manifest")
+                      echo "Publishing $manifest ($NAME @ $VERSION)..."
+                      ./mcp-publisher publish "$manifest"
+                  done < publish-manifests.txt
 
             - name: Report Success
               if: steps.check.outputs.should_publish == 'true' && success()
               run: |
-                  VERSION="${{ steps.version.outputs.version }}"
-                  echo "✅ Successfully published Port MCP Server version $VERSION to the registry"
+                  echo "✅ Published manifests:"
+                  cat publish-manifests.txt
                   echo ""
-                  echo "Verifying registry entry..."
-                  curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=io.port/Port" | jq
+                  echo "Latest registry entries:"
+                  for name in io.port/Port io.port/Port-US; do
+                      curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=${name}" | jq --arg n "$name" '
+                          [.servers[] | select(.server.name == $n and (._meta."io.modelcontextprotocol.registry/official".isLatest == true))]
+                          | .[0].server | {name, title, version, remotes}
+                      '
+                  done
 
             - name: Report Skipped
               if: steps.check.outputs.should_publish == 'false'
-              run: |
-                  VERSION="${{ steps.version.outputs.version }}"
-                  echo "ℹ️ Skipped publishing - version $VERSION is already in the registry"
-                  echo ""
-                  echo "To publish a new version, update the version in server.json"
+              run: echo "ℹ️ All manifest versions are already in the registry — nothing to publish."
